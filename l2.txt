@@ -1,0 +1,134 @@
+#!/bin/bash
+
+EMAIL="trartesvisuais@gmail.com"
+ARQUIVO_LOG="/tmp/relatorio_seguranca.txt"
+
+# Função para instalar ferramentas caso não estejam presentes
+function verificar_instalacoes() {
+    echo "[+] Verificando ferramentas necessárias..."
+    for pacote in nmap clamav msmtp; do
+        if ! command -v $pacote &> /dev/null; then
+            echo "[-] $pacote não encontrado. Instalando..."
+            sudo apt update && sudo apt install -y $pacote
+        else
+            echo "[✓] $pacote já está instalado."
+        fi
+    done
+}
+
+# Função para enviar relatório por e-mail
+function enviar_email() {
+    TIMESTAMP=$(date '+%Y-%m-%d_%H-%M')
+    SUBJECT="Relatório de Segurança - $TIMESTAMP"
+
+    echo "[+] Enviando relatório para $EMAIL..."
+
+    {
+        echo "From: ALERTA SEGURANÇA <$EMAIL>"
+        echo "To: <$EMAIL>"
+        echo "Subject: $SUBJECT"
+        echo "Content-Type: text/plain; charset=UTF-8"
+        echo
+        cat "$ARQUIVO_LOG"
+    } | msmtp "$EMAIL"
+}
+
+# Função para executar varredura simples
+function varredura_simples() {
+    echo "### Iniciando Varredura Simples com ClamAV ###" > "$ARQUIVO_LOG"
+    clamscan -r ~ >> "$ARQUIVO_LOG"
+    echo "### Varredura Finalizada ###" >> "$ARQUIVO_LOG"
+    enviar_email
+}
+
+# Função para executar varredura completa do sistema
+function varredura_completa() {
+    echo "### Iniciando Análise Completa de Segurança ###" > "$ARQUIVO_LOG"
+
+    echo "[1] Verificando portas abertas..." >> "$ARQUIVO_LOG"
+    nmap localhost >> "$ARQUIVO_LOG"
+
+    echo -e "\n[2] Verificando serviços em execução..." >> "$ARQUIVO_LOG"
+    ss -tuln >> "$ARQUIVO_LOG"
+
+    echo -e "\n[3] Executando scan básico de vulnerabilidades..." >> "$ARQUIVO_LOG"
+    nmap -sV localhost >> "$ARQUIVO_LOG"
+
+    echo -e "\n[4] Dispositivos conectados na rede local..." >> "$ARQUIVO_LOG"
+    IP=$(hostname -I | awk '{print $1}')
+    REDE=$(echo "$IP" | cut -d. -f1-3).0/24
+    nmap -sn "$REDE" >> "$ARQUIVO_LOG"
+
+    echo -e "\n[5] Verificando status do firewall UFW..." >> "$ARQUIVO_LOG"
+    sudo ufw status verbose >> "$ARQUIVO_LOG" 2>/dev/null || echo "UFW não está instalado." >> "$ARQUIVO_LOG"
+
+    echo -e "\n[6] Listando usuários do sistema..." >> "$ARQUIVO_LOG"
+    cut -d: -f1 /etc/passwd >> "$ARQUIVO_LOG"
+
+    echo -e "\n[7] Verificando atualizações do sistema..." >> "$ARQUIVO_LOG"
+    sudo apt update && sudo apt upgrade -s >> "$ARQUIVO_LOG"
+
+    echo -e "\n### Análise Finalizada ###" >> "$ARQUIVO_LOG"
+    enviar_email
+}
+
+# Função para agendar execução com explicação
+function agendar_cron() {
+    echo ""
+    echo "Você irá definir o agendamento com 5 campos: minuto, hora, dia do mês, mês, dia da semana."
+    echo "Exemplo: 0 8 * * 6 → Executa todo sábado às 8h da manhã."
+    echo "Significado:"
+    echo "  0 = minuto 0"
+    echo "  8 = hora 8 (8h da manhã)"
+    echo "  * = qualquer dia do mês"
+    echo "  * = qualquer mês"
+    echo "  6 = sábado (os dias da semana vão de 0-domingo a 6-sábado)"
+    echo ""
+    echo "Digite a expressão cron desejada (ex: 0 8 * * 6):"
+    read cron_expr
+    crontab -l > minha_cron.tmp 2>/dev/null
+    echo "$cron_expr bash ~/analise_seguranca.sh --completa" >> minha_cron.tmp
+    crontab minha_cron.tmp && rm minha_cron.tmp
+    echo "[✓] Agendamento adicionado com sucesso!"
+}
+
+# Menu principal
+function menu_principal() {
+    echo ""
+    echo "### MENU DE ANÁLISE DE SEGURANÇA ###"
+    echo "[1] Varredura Simples"
+    echo "[2] Análise Completa de Segurança"
+    echo "[3] Agendar Execução Automática"
+    echo "[4] Sair"
+    echo ""
+    read -p "Escolha uma opção [1-4]: " opcao
+
+    case $opcao in
+        1)
+            verificar_instalacoes
+            varredura_simples
+            ;;
+        2)
+            verificar_instalacoes
+            varredura_completa
+            ;;
+        3)
+            agendar_cron
+            ;;
+        4)
+            echo "Encerrando o programa."
+            exit 0
+            ;;
+        *)
+            echo "Opção inválida."
+            ;;
+    esac
+}
+
+# Executa se script for chamado com parâmetro --completa (modo cron)
+if [[ "$1" == "--completa" ]]; then
+    verificar_instalacoes
+    varredura_completa
+else
+    menu_principal
+fi
