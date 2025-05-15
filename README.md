@@ -1,0 +1,1 @@
+# Script-automa-o-seg
