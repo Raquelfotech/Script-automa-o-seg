@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EMAIL="trartesvisuais@gmail.com"
+EMAIL="SEU E-MAIL AQUI"
 ARQUIVO_LOG="/tmp/relatorio_seguranca.txt"
 
 # Função para instalar ferramentas caso não estejam presentes
